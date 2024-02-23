@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_rfid_method_channel.dart';
@@ -23,7 +24,39 @@ abstract class FlutterRfidPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  Future<String?> getPlatformVersion() {
-    throw UnimplementedError('platformVersion() has not been implemented.');
+  Future<void> scanForReader() {
+    throw UnimplementedError('scanForReader() has not been implemented.');
+  }
+
+  Future<void> scanForCard() {
+    throw UnimplementedError('scanForCard() has not been implemented.');
+  }
+
+  Future<Uint8List> transmit(Uint8List data) {
+    throw UnimplementedError('transmit() has not been implemented.');
+  }
+
+  Future<Uint8List?> getAtr() {
+    throw UnimplementedError('getAtr() has not been implemented.');
+  }
+
+  void setOnReaderConnectedCallback(VoidCallback callback) {
+    throw UnimplementedError(
+        'setOnReaderConnectedCallback() has not been implemented.');
+  }
+
+  void setOnReaderDisconnectedCallback(VoidCallback callback) {
+    throw UnimplementedError(
+        'setOnReaderDisconnectedCallback() has not been implemented.');
+  }
+
+  void setOnCardPresentCallback(VoidCallback callback) {
+    throw UnimplementedError(
+        'setOnCardPresentCallback() has not been implemented.');
+  }
+
+  void setOnCardAbsentCallback(VoidCallback callback) {
+    throw UnimplementedError(
+        'setOnCardAbsentCallback() has not been implemented.');
   }
 }

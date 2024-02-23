@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  # Run on PRs and pushes to the default branch.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 0"
+
+jobs:
+  # Check code formatting and static analysis on a single OS (linux)
+  # against Dart dev.
+  analyze:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - id: install
+        name: Install dependencies
+        run: flutter pub get
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze code
+        run: flutter analyze
+
+  # Run tests on a matrix consisting of two dimensions:
+  # 1. OS: ubuntu-latest, macos-latest, windows-latest
+  # 2. release channel: dev
+  test:
+    needs: analyze
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ matrix.channel }}
+          cache: true
+      - id: install
+        name: Install dependencies
+        run: flutter pub get
+      - name: Run VM tests
+        run: flutter test
+
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - id: install
+        name: Install dependencies
+        run: flutter pub get
+      - name: Collect and report coverage
+        run: flutter test --coverage
+      - name: Upload coverage
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ github.token }}
+          file: coverage/lcov.info
