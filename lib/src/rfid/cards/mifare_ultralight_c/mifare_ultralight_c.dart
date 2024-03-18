@@ -118,8 +118,8 @@ class MifareUltralightC {
     _validateBlockNumber(
       blockNumber: blockNumber,
       length: length,
-      start: MEMORY_ADDRESS_START,
-      end: MEMORY_ADDRESS_END,
+      start: DATA_ADDRESS_START,
+      end: DATA_ADDRESS_END,
     );
 
     try {
