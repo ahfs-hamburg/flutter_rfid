@@ -1,6 +1,6 @@
 name: flutter_rfid
 description: A Flutter plugin that provides integration with RFID readers on iOS platforms, enabling Flutter applications to communicate with RFID tags.
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/ahfs-hamburg/flutter_rfid
 issue_tracker: https://github.com/ahfs-hamburg/flutter_rfid/issues
 
