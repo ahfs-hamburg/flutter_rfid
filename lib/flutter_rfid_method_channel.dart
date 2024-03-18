@@ -36,8 +36,6 @@ class MethodChannelFlutterRfid extends FlutterRfidPlatform {
         case 'onCardAbsent':
           _onCardAbsent();
           break;
-        default:
-          throw MissingPluginException();
       }
     });
   }
