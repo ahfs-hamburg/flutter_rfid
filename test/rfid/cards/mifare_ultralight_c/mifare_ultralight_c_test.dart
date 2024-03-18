@@ -1,76 +1,13 @@
 import 'package:flutter_rfid/cards/mifare_ultralight_c.dart';
 import 'package:flutter_rfid/src/rfid/cards/mifare_ultralight_c/mifare_ultralight_c.dart';
+import 'package:flutter_rfid/src/rfid/cards/mifare_ultralight_c/models.dart';
 import 'package:flutter_rfid/src/rfid/core/card_manufacturer.dart';
 import 'package:flutter_rfid/src/rfid/core/exceptions.dart';
 import 'package:flutter_rfid/src/rfid/core/reader.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
-class MockedReader extends RFIDReader {
-  var data = List<int>.generate(
-      ((MifareUltralightC.DATA_ADDRESS_END + 1) -
-              MifareUltralightC.DATA_ADDRESS_START) *
-          MifareUltralightC.BLOCK_SIZE,
-      (index) => index);
-  var serial = generateSerial(uid: [
-    CardManufacturer.NXPSemiconductors.id,
-    0x01,
-    0x02,
-    0x03,
-    0x04,
-    0x05,
-    0x06
-  ]);
-
-  @override
-  Future<List<int>> readBlock({
-    required int blockNumber,
-    required int length,
-  }) {
-    if (blockNumber == MifareUltralightC.SERIAL_NUMBER_ADDRESS_START) {
-      return Future.value(serial);
-    }
-
-    final startIndex = (blockNumber - MifareUltralightC.DATA_ADDRESS_START) *
-        MifareUltralightC.BLOCK_SIZE;
-
-    return Future.value(
-      data.sublist(startIndex, startIndex + length),
-    );
-  }
-
-  @override
-  Future<bool> writeBlock({
-    required int blockNumber,
-    required List<int> data,
-  }) {
-    final startIndex = (blockNumber - MifareUltralightC.DATA_ADDRESS_START) *
-        MifareUltralightC.BLOCK_SIZE;
-
-    // Update the specified block with the new data
-    for (int i = 0; i < data.length; i++) {
-      if (startIndex + i < this.data.length) {
-        this.data[startIndex + i] = data[i];
-      }
-    }
-
-    return Future.value(true);
-  }
-
-  @override
-  Future<bool> authenticate({
-    required int blockNumber,
-    required List<int> key,
-  }) {
-    return Future.value(true);
-  }
-
-  @override
-  Future<bool> authenticate3DES({
-    required List<int> key,
-  }) {
-    return Future.value(true);
-  }
-}
+class MockedReader extends Mock implements RFIDReader {}
 
 List<int> generateSerial({
   required List<int> uid,
@@ -111,6 +48,19 @@ void main() {
     });
 
     group('readData', () {
+      setUp(() {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((invocation) {
+          final blockNumber = invocation.namedArguments[#blockNumber] as int;
+          final length = invocation.namedArguments[#length] as int;
+
+          return Future.value(List<int>.generate(
+              length, (index) => index + (blockNumber - 0x04) * 4));
+        });
+      });
+
       test('should throw an exception if length is less than 0', () {
         expect(
           () async => await card.readData(blockNumber: 0x04, length: -1),
@@ -159,6 +109,18 @@ void main() {
         );
       });
 
+      test('should throw an exception if card read fails', () {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenThrow(Exception());
+
+        expect(
+          () async => await card.readData(blockNumber: 0x04, length: 4),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
       test(
           'should read normally if block number + length is equal to 0x27 or less',
           () {
@@ -202,6 +164,19 @@ void main() {
     });
 
     group('readLongData', () {
+      setUp(() {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((invocation) {
+          final blockNumber = invocation.namedArguments[#blockNumber] as int;
+          final length = invocation.namedArguments[#length] as int;
+
+          return Future.value(List<int>.generate(
+              length, (index) => index + (blockNumber - 0x04) * 4));
+        });
+      });
+
       test('should throw an exception if length is less than 0', () {
         expect(
           () async => await card.readLongData(blockNumber: 0x04, length: -1),
@@ -235,11 +210,23 @@ void main() {
         );
       });
 
+      test('should throw an exception if card read fails', () {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenThrow(Exception());
+
+        expect(
+          card.readLongData(blockNumber: 0x04, length: 16),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
       test(
           'should read normally for valid block numbers and lengths within bounds',
           () {
         expect(
-          () async => await card.readLongData(blockNumber: 0x04, length: 24),
+          () async => await card.readLongData(blockNumber: 0x04, length: 16),
           returnsNormally,
         );
       });
@@ -320,31 +307,46 @@ void main() {
         );
       });
 
+      test('should throw an exception if card write fails', () {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenThrow(Exception());
+
+        expect(
+          card.writeData(
+            blockNumber: DATA_ADDRESS_START,
+            data: [0x00, 0x00, 0x00, 0x00],
+          ),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
       test('should successfully write data to the correct block', () async {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenAnswer((_) => Future.value());
+
         await card.writeData(
           blockNumber: DATA_ADDRESS_START,
           data: [0x01, 0x02, 0x03, 0x04],
         );
-        expect(
-          await reader.readBlock(
-            blockNumber: DATA_ADDRESS_START,
-            length: BLOCK_SIZE,
-          ),
-          equals([0x01, 0x02, 0x03, 0x04]),
-        );
+
+        verify(() => reader.writeBlock(
+              blockNumber: DATA_ADDRESS_START,
+              data: [0x01, 0x02, 0x03, 0x04],
+            )).called(1);
 
         await card.writeData(
           blockNumber: DATA_ADDRESS_END,
           data: [0x05, 0x06, 0x07, 0x08],
         );
 
-        expect(
-          await reader.readBlock(
-            blockNumber: DATA_ADDRESS_END,
-            length: BLOCK_SIZE,
-          ),
-          equals([0x05, 0x06, 0x07, 0x08]),
-        );
+        verify(() => reader.writeBlock(
+              blockNumber: DATA_ADDRESS_END,
+              data: [0x05, 0x06, 0x07, 0x08],
+            )).called(1);
       });
     });
 
@@ -377,23 +379,57 @@ void main() {
         );
       });
 
+      test('should throw an exception if data contains invalid bytes', () {
+        expect(
+          card.writeLongData(
+            blockNumber: DATA_ADDRESS_START,
+            data: [-1, 0x00, 0x100, 0x00],
+          ), // Invalid bytes
+          throwsA(isA<InvalidDataException>()),
+        );
+      });
+
+      test('should throw an exception if card write fails', () {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenThrow(Exception());
+
+        expect(
+          card.writeLongData(
+            blockNumber: DATA_ADDRESS_START,
+            data: [0x00, 0x00, 0x00, 0x00],
+          ),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
       test('should successfully write long data spanning multiple blocks',
           () async {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenAnswer((_) => Future.value());
+
         List<int> longData = List<int>.generate(
             BLOCK_SIZE * 3, (i) => i % 256); // Example long data
         await card.writeLongData(
             blockNumber: DATA_ADDRESS_START, data: longData);
 
-        // Verify data written correctly across blocks
-        for (int i = 0; i < 3; i++) {
-          List<int> expectedData =
-              longData.sublist(i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE);
+        verify(() => reader.writeBlock(
+              blockNumber: DATA_ADDRESS_START,
+              data: longData.sublist(0, BLOCK_SIZE),
+            )).called(1);
 
-          List<int> actualData = await reader.readBlock(
-              blockNumber: DATA_ADDRESS_START + i, length: BLOCK_SIZE);
+        verify(() => reader.writeBlock(
+              blockNumber: DATA_ADDRESS_START + 1,
+              data: longData.sublist(BLOCK_SIZE, BLOCK_SIZE * 2),
+            )).called(1);
 
-          expect(actualData, equals(expectedData));
-        }
+        verify(() => reader.writeBlock(
+              blockNumber: DATA_ADDRESS_START + 2,
+              data: longData.sublist(BLOCK_SIZE * 2, BLOCK_SIZE * 3),
+            )).called(1);
       });
     });
 
@@ -402,6 +438,34 @@ void main() {
         List<int> edgeCaseData = List<int>.generate(
             (DATA_ADDRESS_END - DATA_ADDRESS_START + 1) * BLOCK_SIZE,
             (i) => i % 50);
+
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((invocation) {
+          final blockNumber = invocation.namedArguments[#blockNumber] as int;
+          final length = invocation.namedArguments[#length] as int;
+
+          return Future.value(edgeCaseData.sublist(
+              (blockNumber - DATA_ADDRESS_START) * BLOCK_SIZE,
+              (blockNumber - DATA_ADDRESS_START) * BLOCK_SIZE + length));
+        });
+
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenAnswer((invocation) {
+          final blockNumber = invocation.namedArguments[#blockNumber] as int;
+          final data = invocation.namedArguments[#data] as List<int>;
+
+          for (int i = 0; i < data.length; i++) {
+            edgeCaseData[(blockNumber - DATA_ADDRESS_START) * BLOCK_SIZE + i] =
+                data[i];
+          }
+
+          return Future.value();
+        });
+
         await card.writeLongData(
             blockNumber: DATA_ADDRESS_START, data: edgeCaseData);
 
@@ -448,6 +512,26 @@ void main() {
           throwsException,
         );
       });
+
+      test('should throw an exception if card authentication fails', () {
+        when(() => reader.authenticate3DES(key: any(named: 'key')))
+            .thenThrow(Exception());
+
+        expect(
+          card.authenticate(key: List<int>.generate(16, (i) => i)),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
+      test('should successfully authenticate with the correct key', () async {
+        when(() => reader.authenticate3DES(key: any(named: 'key')))
+            .thenAnswer((_) => Future.value());
+
+        final key = List<int>.generate(16, (i) => i);
+        await card.authenticate(key: key);
+
+        verify(() => reader.authenticate3DES(key: key)).called(1);
+      });
     });
 
     group('getUID', () {
@@ -461,12 +545,30 @@ void main() {
         0x06
       ];
 
+      test('should throw an exception if card read fails', () async {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenThrow(Exception());
+
+        try {
+          await card.getUID();
+
+          fail('Expected an exception');
+        } catch (e) {
+          expect(e, isA<RFIDException>());
+        }
+      });
+
       test('should throw an exception if manufacturer ID is invalid', () async {
-        reader.serial = generateSerial(
-          uid: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
-          validBcc0: true,
-          validBcc1: true,
-        );
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value(generateSerial(
+              uid: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+              validBcc0: true,
+              validBcc1: true,
+            )));
 
         try {
           await card.getUID();
@@ -479,11 +581,14 @@ void main() {
       });
 
       test('should throw an exception if checksum (BCC0) is invalid', () async {
-        reader.serial = generateSerial(
-          uid: uid,
-          validBcc0: false,
-          validBcc1: true,
-        );
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value(generateSerial(
+              uid: uid,
+              validBcc0: false,
+              validBcc1: true,
+            )));
 
         try {
           await card.getUID();
@@ -496,11 +601,14 @@ void main() {
       });
 
       test('should throw an exception if checksum (BCC1) is invalid', () async {
-        reader.serial = generateSerial(
-          uid: uid,
-          validBcc0: true,
-          validBcc1: false,
-        );
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value(generateSerial(
+              uid: uid,
+              validBcc0: true,
+              validBcc1: false,
+            )));
 
         try {
           await card.getUID();
@@ -522,14 +630,184 @@ void main() {
           0x05,
           0x06
         ];
-
-        reader.serial = generateSerial(
-          uid: uid,
-          validBcc0: true,
-          validBcc1: true,
-        );
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value(generateSerial(
+              uid: uid,
+              validBcc0: true,
+              validBcc1: true,
+            )));
 
         expect(await card.getUID(), equals(uid));
+      });
+    });
+
+    group('getAuthConfig', () {
+      test('should throw an exception if card read fails', () {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenThrow(Exception());
+
+        expect(
+          card.getAuthConfig(),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
+      test('should call reader.readBlock with the correct parameters',
+          () async {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value([0x04, 0x00, 0x00, 0x00, 0x00]));
+
+        await card.getAuthConfig();
+
+        verify(() => reader.readBlock(
+              blockNumber: MifareUltralightC.AUTH_CONFIG_ADDRESS_START,
+              length: BLOCK_SIZE * 2,
+            )).called(1);
+      });
+
+      test('should return the correct AuthConfig if card read succeeds',
+          () async {
+        when(() => reader.readBlock(
+              blockNumber: any(named: 'blockNumber'),
+              length: any(named: 'length'),
+            )).thenAnswer((_) => Future.value([0x04, 0x00, 0x00, 0x00, 0x00]));
+
+        expect(
+          await card.getAuthConfig(),
+          isA<AuthConfig>()
+              .having((config) => config.startingBlock, 'startingBlock', 0x04)
+              .having((config) => config.lock, 'lock', AuthLock.readWrite),
+        );
+      });
+    });
+
+    group('setAuthConfig', () {
+      test('should throw an exception if starting block is out of range', () {
+        expect(
+          card.setAuthConfig(
+            startingBlock: 0x01,
+            lock: AuthLock.readWrite,
+          ),
+          throwsA(isA<InvalidBlockException>()),
+        );
+
+        expect(
+          card.setAuthConfig(
+            startingBlock: MifareUltralightC.MEMORY_ADDRESS_END + 1,
+            lock: AuthLock.readWrite,
+          ),
+          throwsA(isA<InvalidBlockException>()),
+        );
+      });
+
+      test('should throw an exception if card write fails', () {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenThrow(Exception());
+
+        expect(
+          card.setAuthConfig(
+            startingBlock: DATA_ADDRESS_START,
+            lock: AuthLock.readWrite,
+          ),
+          throwsA(isA<RFIDException>()),
+        );
+      });
+
+      test('should successfully set the authentication configuration',
+          () async {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenAnswer((_) => Future.value());
+
+        await card.setAuthConfig(
+          startingBlock: DATA_ADDRESS_START,
+          lock: AuthLock.readWrite,
+        );
+
+        verify(() => reader.writeBlock(
+              blockNumber: MifareUltralightC.AUTH_CONFIG_ADDRESS_START,
+              data: [DATA_ADDRESS_START, 0x00, 0x00, 0x00],
+            )).called(1);
+
+        verify(() => reader.writeBlock(
+              blockNumber: MifareUltralightC.AUTH_CONFIG_ADDRESS_START + 1,
+              data: [AuthLock.readWrite.value, 0x00, 0x00, 0x00],
+            )).called(1);
+      });
+    });
+
+    group('changeAuthKey', () {
+      test('should throw an exception if key length is not 16', () {
+        expect(
+          () async => await card.changeAuthKey(key: [0x01, 0x02, 0x03]),
+          throwsException,
+        );
+
+        expect(
+          () async =>
+              await card.changeAuthKey(key: List<int>.generate(17, (i) => i)),
+          throwsException,
+        );
+      });
+
+      test('should throw an exception if key contains invalid bytes', () {
+        expect(
+          () async {
+            final invalidKey = List<int>.generate(16, (i) => i);
+            invalidKey[0] = -1;
+
+            await card.changeAuthKey(key: invalidKey);
+          },
+          throwsException,
+        );
+
+        expect(
+          () async {
+            final invalidKey = List<int>.generate(16, (i) => i);
+            invalidKey[0] = 0x100;
+
+            await card.changeAuthKey(key: invalidKey);
+          },
+          throwsException,
+        );
+      });
+
+      test('should throw an exception if card write fails', () {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenThrow(Exception());
+
+        expect(
+          () async => await card.changeAuthKey(
+            key: List<int>.generate(16, (i) => i),
+          ),
+          throwsException,
+        );
+      });
+
+      test('should successfully change the authentication key', () async {
+        when(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).thenAnswer((_) => Future.value());
+
+        final key = List<int>.generate(16, (i) => i);
+        await card.changeAuthKey(key: key);
+
+        verify(() => reader.writeBlock(
+              blockNumber: any(named: 'blockNumber'),
+              data: any(named: 'data'),
+            )).called(4);
       });
     });
   });

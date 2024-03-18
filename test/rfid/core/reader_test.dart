@@ -5,148 +5,117 @@ import 'package:flutter_rfid/flutter_rfid_platform_interface.dart';
 import 'package:flutter_rfid/src/rfid/core/reader.dart';
 import 'package:flutter_rfid/src/rfid/protocols/adpu.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-class MockFlutterRfidPlatform
+class MockedFlutterRfidPlatform extends Mock
     with MockPlatformInterfaceMixin
     implements FlutterRfidPlatform {
-  final List<VoidCallback> onReaderConnectedCallbacks = [];
-  final List<VoidCallback> onReaderDisconnectedCallbacks = [];
-  final List<VoidCallback> onCardPresentCallbacks = [];
-  final List<VoidCallback> onCardAbsentCallbacks = [];
-
-  @override
-  Future<void> scanForReader() async {}
-
-  @override
-  Future<void> scanForCard() async {}
-
-  @override
-  Future<Uint8List> transmit(Uint8List data) {
-    if (data[1] == 0xFF) {
-      return Future.value(Uint8List.fromList([0x63, 0x00]));
-    }
-
-    return Future.value(Uint8List.fromList([0x90, 0x00]));
-  }
-
-  @override
-  Future<Uint8List?> getAtr() {
-    return Future.value(null);
-  }
+  VoidCallback? onReaderConnectedCallback;
+  VoidCallback? onReaderDisconnectedCallback;
+  VoidCallback? onCardPresentCallback;
+  VoidCallback? onCardAbsentCallback;
 
   @override
   void setOnReaderConnectedCallback(VoidCallback callback) {
-    onReaderConnectedCallbacks.add(callback);
+    onReaderConnectedCallback = callback;
   }
 
   @override
   void setOnReaderDisconnectedCallback(VoidCallback callback) {
-    onReaderDisconnectedCallbacks.add(callback);
+    onReaderDisconnectedCallback = callback;
   }
 
   @override
   void setOnCardPresentCallback(VoidCallback callback) {
-    onCardPresentCallbacks.add(callback);
+    onCardPresentCallback = callback;
   }
 
   @override
   void setOnCardAbsentCallback(VoidCallback callback) {
-    onCardAbsentCallbacks.add(callback);
+    onCardAbsentCallback = callback;
   }
 
   void callReaderConnected() {
-    for (final callback in onReaderConnectedCallbacks) {
-      callback();
-    }
+    onReaderConnectedCallback?.call();
   }
 
   void callReaderDisconnected() {
-    for (final callback in onReaderDisconnectedCallbacks) {
-      callback();
-    }
+    onReaderDisconnectedCallback?.call();
   }
 
   void callCardPresent() {
-    for (final callback in onCardPresentCallbacks) {
-      callback();
-    }
+    onCardPresentCallback?.call();
   }
 
   void callCardAbsent() {
-    for (final callback in onCardAbsentCallbacks) {
-      callback();
-    }
+    onCardAbsentCallback?.call();
   }
 }
 
-class MockedReader extends RFIDReader {
-  static const BLOCK_SIZE = 4;
-  static const DATA_ADDRESS_START = 4;
-  static const DATA_ADDRESS_END = 39;
+class MockedReader extends RFIDReader with Mock {}
 
-  var data = List<int>.generate(
-      ((DATA_ADDRESS_END + 1) - DATA_ADDRESS_START) * BLOCK_SIZE,
-      (index) => index);
-
-  @override
-  Future<List<int>> readBlock({
-    required int blockNumber,
-    required int length,
-  }) {
-    final startIndex = (blockNumber - DATA_ADDRESS_START) * BLOCK_SIZE;
-
-    return Future.value(
-      data.sublist(startIndex, startIndex + length),
-    );
-  }
-
-  @override
-  Future<bool> writeBlock({
-    required int blockNumber,
-    required List<int> data,
-  }) {
-    final startIndex = (blockNumber - DATA_ADDRESS_START) * BLOCK_SIZE;
-
-    // Update the specified block with the new data
-    for (int i = 0; i < data.length; i++) {
-      if (startIndex + i < this.data.length) {
-        this.data[startIndex + i] = data[i];
-      }
-    }
-
-    return Future.value(true);
-  }
-
-  @override
-  Future<bool> authenticate({
-    required int blockNumber,
-    required List<int> key,
-  }) {
-    return Future.value(true);
-  }
-
-  @override
-  Future<bool> authenticate3DES({
-    required List<int> key,
-  }) {
-    return Future.value(true);
-  }
+class MockCallbacks extends Mock {
+  void onReaderConnected();
+  void onReaderDisconnected();
+  void onCardPresent();
+  void onCardAbsent();
 }
 
 void main() {
   group('RFIDReader', () {
-    late MockFlutterRfidPlatform platform;
+    late MockedFlutterRfidPlatform platform;
     late RFIDReader reader;
+    late MockCallbacks mockCallbacks;
+
+    setUpAll(() {
+      registerFallbackValue(Uint8List(0));
+    });
 
     setUp(() {
-      platform = MockFlutterRfidPlatform();
+      platform = MockedFlutterRfidPlatform();
       FlutterRfidPlatform.instance = platform;
       reader = MockedReader();
+      mockCallbacks = MockCallbacks();
+
+      when(() => platform.getAtr()).thenAnswer((_) => Future.value(null));
     });
 
     group('transmitApdu', () {
+      test('sends the correct APDU', () async {
+        when(() => platform.transmit(any(
+                  that: isA<Uint8List>(),
+                )))
+            .thenAnswer((_) => Future.value(Uint8List.fromList([0x90, 0x00])));
+
+        await reader.transmitApdu(
+          ApduHeader(
+            classNumber: 0x00,
+            instruction: 0x00,
+            p1: 0x00,
+            p2: 0x00,
+          ),
+          data: Uint8List.fromList([0x00]),
+        );
+
+        verify(() => platform.transmit(
+              Uint8List.fromList([
+                0x00, // classNumber
+                0x00, // instruction
+                0x00, // p1
+                0x00, // p2
+                0x01, // data length
+                0x00, // data
+              ]),
+            ));
+      });
+
       test('should return the response from the platform', () async {
+        when(() => platform.transmit(any(
+                  that: isA<Uint8List>(),
+                )))
+            .thenAnswer((_) => Future.value(Uint8List.fromList([0x90, 0x00])));
+
         final response = await reader.transmitApdu(
           ApduHeader(
             classNumber: 0x00,
@@ -162,7 +131,12 @@ void main() {
         expect(response.data, equals([]));
       });
 
-      test('should throw an exception if the data is empty', () async {
+      test('should throw an exception if the transmit fails', () async {
+        when(() => platform.transmit(any(
+                  that: isA<Uint8List>(),
+                )))
+            .thenAnswer((_) => Future.value(Uint8List.fromList([0x63, 0x00])));
+
         try {
           await reader.transmitApdu(
             ApduHeader(
@@ -181,73 +155,75 @@ void main() {
       });
     });
 
+    group('getAtr', () {
+      test('should return the ATR from the platform', () async {
+        when(() => platform.getAtr())
+            .thenAnswer((_) => Future.value(Uint8List.fromList([0x3B, 0x8F])));
+
+        final atr = await reader.getAtr();
+
+        expect(atr, equals(Uint8List.fromList([0x3B, 0x8F])));
+
+        verify(() => platform.getAtr()).called(1);
+      });
+
+      test('should return null if the ATR is not available', () async {
+        when(() => platform.getAtr()).thenAnswer((_) => Future.value(null));
+
+        final atr = await reader.getAtr();
+
+        expect(atr, isNull);
+
+        verify(() => platform.getAtr()).called(1);
+      });
+    });
+
     group('onReaderConnectedCallback', () {
       test('should call the callback when the reader is connected', () {
-        bool callbackCalled = false;
+        reader.addOnReaderConnectedCallback(mockCallbacks.onReaderConnected);
 
-        void callback() {
-          callbackCalled = true;
-        }
-
-        reader.addOnReaderConnectedCallback(callback);
-
-        expect(callbackCalled, equals(false));
+        verifyNever(() => mockCallbacks.onReaderConnected());
 
         platform.callReaderConnected();
 
-        expect(callbackCalled, equals(true));
+        verify(() => mockCallbacks.onReaderConnected()).called(1);
       });
 
       test('should remove the callback when the reader is disconnected', () {
-        bool callbackCalled = false;
+        reader.addOnReaderConnectedCallback(mockCallbacks.onReaderConnected);
 
-        void callback() {
-          callbackCalled = true;
-        }
+        verifyNever(() => mockCallbacks.onReaderConnected());
 
-        reader.addOnReaderConnectedCallback(callback);
-
-        expect(callbackCalled, equals(false));
-
-        reader.removeOnReaderConnectedCallback(callback);
+        reader.removeOnReaderConnectedCallback(mockCallbacks.onReaderConnected);
         platform.callReaderConnected();
 
-        expect(callbackCalled, equals(false));
+        verifyNever(() => mockCallbacks.onReaderConnected());
       });
     });
 
     group('onReaderDisconnectedCallback', () {
       test('should call the callback when the reader is disconnected', () {
-        bool callbackCalled = false;
+        reader.addOnReaderDisconnectedCallback(
+            mockCallbacks.onReaderDisconnected);
 
-        void callback() {
-          callbackCalled = true;
-        }
-
-        reader.addOnReaderDisconnectedCallback(callback);
-
-        expect(callbackCalled, equals(false));
+        verifyNever(() => mockCallbacks.onReaderDisconnected());
 
         platform.callReaderDisconnected();
 
-        expect(callbackCalled, equals(true));
+        verify(() => mockCallbacks.onReaderDisconnected()).called(1);
       });
 
       test('should remove the callback when the reader is disconnected', () {
-        bool callbackCalled = false;
+        reader.addOnReaderDisconnectedCallback(
+            mockCallbacks.onReaderDisconnected);
 
-        void callback() {
-          callbackCalled = true;
-        }
+        verifyNever(() => mockCallbacks.onReaderDisconnected());
 
-        reader.addOnReaderDisconnectedCallback(callback);
-
-        expect(callbackCalled, equals(false));
-
-        reader.removeOnReaderDisconnectedCallback(callback);
+        reader.removeOnReaderDisconnectedCallback(
+            mockCallbacks.onReaderDisconnected);
         platform.callReaderDisconnected();
 
-        expect(callbackCalled, equals(false));
+        verifyNever(() => mockCallbacks.onReaderDisconnected());
       });
     });
 
@@ -261,11 +237,11 @@ void main() {
 
         reader.addOnCardPresentCallback(callback);
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
 
         platform.callCardPresent();
 
-        expect(callbackCalled, equals(true));
+        expect(callbackCalled, isTrue);
       });
 
       test('should remove the callback when a card is absent', () {
@@ -277,12 +253,12 @@ void main() {
 
         reader.addOnCardPresentCallback(callback);
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
 
         reader.removeOnCardPresentCallback(callback);
         platform.callCardPresent();
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
       });
     });
 
@@ -296,11 +272,11 @@ void main() {
 
         reader.addOnCardAbsentCallback(callback);
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
 
         platform.callCardAbsent();
 
-        expect(callbackCalled, equals(true));
+        expect(callbackCalled, isTrue);
       });
 
       test('should remove the callback when a card is absent', () {
@@ -312,12 +288,36 @@ void main() {
 
         reader.addOnCardAbsentCallback(callback);
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
 
         reader.removeOnCardAbsentCallback(callback);
         platform.callCardAbsent();
 
-        expect(callbackCalled, equals(false));
+        expect(callbackCalled, isFalse);
+      });
+    });
+
+    group('isConnected', () {
+      test('should return true if the reader is connected', () {
+        platform.callReaderConnected();
+
+        expect(reader.isConnected, isTrue);
+      });
+
+      test('should return false if the reader is not connected', () {
+        expect(reader.isConnected, isFalse);
+      });
+    });
+
+    group('isCardPresent', () {
+      test('should return true if a card is present', () {
+        platform.callCardPresent();
+
+        expect(reader.isCardPresent, isTrue);
+      });
+
+      test('should return false if a card is not present', () {
+        expect(reader.isCardPresent, isFalse);
       });
     });
   });
