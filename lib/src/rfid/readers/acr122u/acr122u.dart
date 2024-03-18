@@ -124,10 +124,6 @@ class ACR122U extends RFIDReader {
       iv: ekABDash.sublist(8, 16),
     ).decrypt(ekADash);
 
-    if (a.length != aDash.length) {
-      throw Exception('Invalid response');
-    }
-
     final aDashComp = rotateListData(a, 1);
     for (var i = 0; i < 8; i++) {
       if (aDashComp[i] != aDash[i]) {
