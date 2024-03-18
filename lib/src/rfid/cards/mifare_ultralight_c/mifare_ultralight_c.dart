@@ -409,11 +409,14 @@ class MifareUltralightC {
   /// for validation. This method ensures the integrity and authenticity of the UID by checking these
   /// values against expected standards.
   Future<List<int>> getUID() async {
-    final data = await reader
-        .readBlock(blockNumber: SERIAL_NUMBER_ADDRESS_START, length: 9)
-        .catchError((dynamic e) {
-      throw RFIDException('Error getting UID: ${e.toString()}');
-    });
+    List<int> data;
+
+    try {
+      data = await reader.readBlock(
+          blockNumber: SERIAL_NUMBER_ADDRESS_START, length: 9);
+    } catch (e) {
+      throw RFIDException('Error reading UID: ${e.toString()}');
+    }
 
     final manufacturerId = data[0];
     final bcc0 = data[3];
